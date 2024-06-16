@@ -1,0 +1,572 @@
+---
+title: "Project PDA - Refined"
+output: word_document
+date: "2024-04-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,warning = FALSE)
+```
+
+Loading all libraries
+```{r}
+library(lindia)
+library(ggplot2)
+library(ISLR2)
+library(MASS)
+library(class)
+library(gam)
+library(boot)
+library(leaps)
+library(glmnet)
+library(pls)
+library(splines)
+library(dplyr)
+library(caret)
+library(polynom)
+library(leaps)
+library(readxl)
+library(e1071)
+library(knitr)
+library(car)
+library(gbm)
+library(rpart)
+library(rpart.plot)
+library(pROC)
+```
+
+**Preliminary data analysis**
+
+Reading in the 'marketing campaign' data set
+```{r}
+marketing_campaign <- read_excel("C:/Users/Prana/OneDrive/Documents/Data Analytics/Project/marketing_campaign.xlsx")
+```
+
+Reviewing the data set
+```{r}
+head(marketing_campaign)
+ncol(marketing_campaign)
+nrow(marketing_campaign)
+```
+
+We see that we have a data set with 29 attributes and 2240 rows each representing a customer and their behavior with respect to marketing campaigns.
+
+```{r}
+summary(marketing_campaign)
+```
+
+Extracts and calculates various temporal features related to customer registration dates from a dataset named "marketing_campaign". It first extracts the year and month from the 'Dt_Customer' column, then computes the total length of time each customer has been with the company in terms of months, and finally determines the earliest and latest registration dates.
+```{r}
+Yr_Customer  <- as(substring(marketing_campaign$Dt_Customer,1,4),"integer")
+noquote("Customer years:")
+Yr_Customer[1:10]
+Month_Customer  <- as(substring(marketing_campaign$Dt_Customer,6,7),"integer")
+noquote("Customer months:")
+Month_Customer[1:10]
+YrMo_Customer <- Yr_Customer*100 + Month_Customer
+noquote("Customer year/months:")
+YrMo_Customer[1:10]
+Max_YrMo <- max(YrMo_Customer)
+Min_YrMo <- min(YrMo_Customer)
+noquote("Earliest customer year/month:")
+Min_YrMo
+noquote("Latest customer year/month:")
+Max_YrMo
+Length_Customer <- (max(Yr_Customer) - Yr_Customer)*12 + (12-Month_Customer)
+noquote("Number of months as a customer:")
+Length_Customer[1:10]
+```
+
+Impute average values to invalid years of birth revealed minimum summary value: (1893,1899,1900). Deals with invalid birth years, notably those falling below 1900, by replacing them with the dataset's average birth year. This adjustment ensures data consistency and reliability for analysis while addressing the minimum summary values discovered.
+```{r}
+noquote("Average year of birth:")
+Year_Birth_Mean <- as(mean(marketing_campaign$Year_Birth),"integer")
+Year_Birth_Mean
+Year_Birth2 <- ifelse(marketing_campaign$Year_Birth < 1940, Year_Birth_Mean, marketing_campaign$Year_Birth)
+noquote("Earliest year of birth:")
+min(marketing_campaign$Year_Birth)
+noquote("Latest year of birth:")
+max(marketing_campaign$Year_Birth)
+noquote("Earliest year of birth revised:")
+min(Year_Birth2)
+noquote("Latest year of birth revised:")
+max(Year_Birth2)
+```
+
+From the summaries of the data columns, we observe a mix of continuous and categorical variables that offer valuable insights. Particularly, the columns of interest are AcceptedCmp1 through AcceptedCmp5 and Response, each indicating a customer's favorable response to a specific marketing campaign. Our primary objective revolves around comprehensively understanding these positive responses to marketing initiatives. Thus, we intend to introduce a new response variable aimed at amalgamating all campaign responses into a single metric. This consolidated metric will enable a more holistic analysis of campaign effectiveness and customer engagement.
+
+```{r}
+any_response <- pmax(marketing_campaign$AcceptedCmp1,marketing_campaign$AcceptedCmp2,marketing_campaign$AcceptedCmp3,marketing_campaign$AcceptedCmp4,marketing_campaign$AcceptedCmp5,marketing_campaign$Response)
+noquote("Response variables 1-6 (first 25 records shown):")
+noquote("__________________________________________________")
+marketing_campaign$AcceptedCmp1[1:25]
+marketing_campaign$AcceptedCmp2[1:25]
+marketing_campaign$AcceptedCmp3[1:25]
+marketing_campaign$AcceptedCmp4[1:25]
+marketing_campaign$AcceptedCmp5[1:25]
+marketing_campaign$Response[1:25]
+noquote("__________________________________________________")
+noquote("Combined response variable:")
+any_response[1:25]
+```
+
+Standardizes various quantitative predictors from the dataset "marketing_campaign" using the scale function, ensuring each variable has a mean of 0 and a standard deviation of 1.
+```{r}
+Year_Birth_Scaled <- scale(Year_Birth2)
+noquote("Preview scaled data set (quantitative predictors only):")
+Year_Birth_Scaled[1:5]
+
+Income_log_Scaled <- scale(log(marketing_campaign$Income))
+Income_log_Scaled[1:5]
+
+Kidhome_Scaled <- scale(marketing_campaign$Kidhome)
+Kidhome_Scaled[1:5]
+
+Teenhome_Scaled <- scale(marketing_campaign$Teenhome)
+Teenhome_Scaled[1:5]
+
+Length_Customer_Scaled <- scale(Length_Customer)
+Length_Customer_Scaled[1:5]
+
+Recency_Scaled <- scale(marketing_campaign$Recency)
+Recency_Scaled[1:5]
+
+MntWines_Scaled <- scale(marketing_campaign$MntWines)
+MntWines_Scaled[1:5]
+
+MntFruits_Scaled <- scale(marketing_campaign$MntFruits)
+MntFruits_Scaled[1:5]
+
+MntMeatProducts_Scaled <- scale(marketing_campaign$MntMeatProducts)
+MntMeatProducts_Scaled[1:5]
+
+MntFishProducts_Scaled <- scale(marketing_campaign$MntFishProducts)
+MntFishProducts_Scaled[1:5]
+
+MntSweetProducts_Scaled <- scale(marketing_campaign$MntSweetProducts)
+MntSweetProducts_Scaled[1:5]
+
+MntGoldProds_Scaled <- scale(marketing_campaign$MntGoldProds)
+MntGoldProds_Scaled[1:5]
+
+NumDealsPurchases_Scaled <- scale(marketing_campaign$NumDealsPurchases)
+NumDealsPurchases_Scaled[1:5]
+
+NumWebPurchases_Scaled <- scale(marketing_campaign$NumWebPurchases)
+NumWebPurchases_Scaled[1:5]
+
+NumCatalogPurchases_Scaled <- scale(marketing_campaign$NumCatalogPurchases)
+NumCatalogPurchases_Scaled[1:5]
+
+NumStorePurchases_Scaled <- scale(marketing_campaign$NumStorePurchases)
+NumStorePurchases_Scaled[1:5]
+
+NumWebVisitsMonth_Scaled <- scale(marketing_campaign$NumWebVisitsMonth)
+NumWebVisitsMonth_Scaled[1:5]
+```
+
+Creates a new dataset named "cleaner_data" by combining the original "marketing_campaign" dataset with the standardized versions of various quantitative predictors. It selects only the standardized variables for inclusion in the new dataset, ensuring that "cleaner_data" contains standardized numerical features suitable for further analysis.
+```{r}
+cleaner_data <- cbind(marketing_campaign
+,Year_Birth_Scaled
+,Income_log_Scaled
+,Kidhome_Scaled
+,Teenhome_Scaled
+,Length_Customer_Scaled
+,Recency_Scaled
+,MntWines_Scaled
+,MntFruits_Scaled
+,MntMeatProducts_Scaled
+,MntFishProducts_Scaled
+,MntSweetProducts_Scaled
+,MntGoldProds_Scaled
+,NumDealsPurchases_Scaled
+,NumWebPurchases_Scaled
+,NumCatalogPurchases_Scaled
+,NumStorePurchases_Scaled
+,NumWebVisitsMonth_Scaled
+)[,30:46]
+head(cleaner_data)
+```
+
+Combine the transformed response variable and scaled quantitative predictive variables.
+```{r}
+marketing_campaign2 <- cbind(any_response,cleaner_data)
+
+head(marketing_campaign2,10)
+```
+
+Check the correlations between all quantitative variables in the cleansed data set before we add the qualitative variables.
+```{r}
+cor(marketing_campaign2)
+```
+
+
+Clean invalid values of Marital Status and combine sparse values.
+```{r}
+Marital_Status2 <- ifelse(marketing_campaign$Marital_Status == 'Alone','Single',marketing_campaign$Marital_Status)
+                          
+Marital_Status3 <- ifelse(Marital_Status2 %in% c('Single','Married'),Marital_Status2,'Other')
+
+noquote("Original values:")
+marketing_campaign$Marital_Status[1:20]
+noquote("")
+noquote("Cleansed values:")
+Marital_Status3[1:20]
+```
+
+Combine ambiguous or sparse values of Education.
+```{r}
+Education2 <- ifelse(marketing_campaign$Education %in% c('PhD','Master','Other'),marketing_campaign$Education,'Other')
+noquote("Original values:")
+marketing_campaign$Education[1:20]
+noquote("")
+noquote("Cleansed values:")
+Education2[1:20]
+```
+
+Add qualitative and boolean (not normalized) variables back into the normalized data set.
+```{r}
+Complain2 <- ifelse(marketing_campaign$Complain == 1, 'Y','N')
+marketing_campaign3 <- cbind(marketing_campaign2,Education2,Marital_Status3,Complain2)
+
+head(marketing_campaign3,10)
+```
+
+Review the cleaned data set.
+```{r}
+summary(marketing_campaign3)
+```
+
+Checks for missing values in the dataset "marketing_campaign3" and removes any rows containing missing values if they exist, resulting in a new dataset named "marketing_campaign4".
+```{r}
+# Check for missing values in the dataset
+missing_values <- sum(is.na(marketing_campaign3))
+noquote(paste("Number of missing values:", missing_values))
+
+# If there are missing values, handle them (e.g., remove rows with missing values)
+if (missing_values > 0) {
+  marketing_campaign4 <- na.omit(marketing_campaign3)
+  noquote("Missing values removed.")
+}
+ncol(marketing_campaign4)
+nrow(marketing_campaign4)
+```
+
+*After refining the data set, we now possess a data set comprising 21 columns and 2216 rows. Our primary objective is to unravel the factors that impact a customer's likelihood of responding positively to any campaign. By distilling our focus onto these influential variables, we aim to gain actionable insights into customer behavior and campaign effectiveness, ultimately optimizing our marketing strategies for enhanced engagement and conversion rates.*
+
+**Logistic Regression**
+
+First let us figure out the possible explanatory variables we shall use before we test a logistic regression model.
+
+Run a logistic model that includes all the variables.
+```{r}
+lm_all <- glm(any_response~ . ,family=binomial, data=marketing_campaign4)
+summary(lm_all)
+```
+
+Highest statistical significant variables:  'Teenhome', 'Recency', 'MntWines', 'NumStorePurchases', 'NumWebVisitsMonth'
+
+Fairly High statistical significant variables: 'Income_log_Scaled', 'NumCatalogPurchases'.
+
+Performs stepwise regression on the dataset "marketing_campaign4", aiming to select the best subset of predictors to explain the response variable. It then generates and displays plots showing the Bayesian Information Criterion (BIC), Mallows' Cp statistic, and adjusted R-squared values for different numbers of predictors, aiding in model selection and evaluation.
+```{r}
+regfit.full <- regsubsets(any_response ~ ., data=marketing_campaign4,nvmax=20)
+reg.summary <- summary(regfit.full)
+plot(reg.summary$bic,xlab="Number of Predictors",ylab="BIC")
+
+plot(reg.summary$cp,xlab="Number of Predictors",ylab="CP")
+
+plot(reg.summary$adjr2,xlab="Number of Predictors",ylab="Adjusted R2")
+```
+
+Use 7-11 predictors based on test statistics above.
+
+Rerun the regsubsets summary limiting the maximum number of variables considered to 11 to determine which variables to include in our model.
+```{r}
+regfit.selected <- regsubsets(any_response ~ ., data=marketing_campaign4,nvmax=11)
+regfit.summary <- summary(regfit.selected)
+regfit.summary
+```
+
+The 7 most predictive variables identified above are:Teenhome_Scaled , Recency_Scaled , MntWines_Scaled , NumStorePurchases_Scaled , NumWebVisitsMonth_Scaled , Income_log_Scaled and NumCatalogPurchases_Scaled.
+
+Split the data into training and testing sets.
+```{r}
+set.seed(123) # For reproducibility
+train_indices <- sample(1:nrow(marketing_campaign4), 0.7 * nrow(marketing_campaign4))
+train_data <- marketing_campaign4[train_indices, ]
+test_data <- marketing_campaign4[-train_indices, ]
+noquote("Training data dimensions:")
+dim(train_data)
+noquote("Test data dimensions:")
+dim(test_data)
+```
+
+Final Logistic Regression Model
+```{r}
+lm_chose <- glm(any_response ~ Teenhome_Scaled + Recency_Scaled + MntWines_Scaled + NumStorePurchases_Scaled + NumWebVisitsMonth_Scaled + Income_log_Scaled + NumCatalogPurchases_Scaled  ,family=binomial, data=train_data)
+summary(lm_chose)
+```
+
+- Teenhome_Scaled, Recency_Scaled, MntWines_Scaled, NumStorePurchases_Scaled, NumWebVisitsMonth_Scaled, Income_log_Scaled, and NumCatalogPurchases_Scaled all have significant effects on the log odds of the response variable.
+
+- The model reveals positive associations between wine expenditure, web visits per month, income, and catalog purchases with the likelihood of the desired response, while negative associations are observed with the presence of teenage household members, recency of purchases, and number of store purchases.
+
+*Compute the confusion matrix and overall fraction of correct predictions.*
+```{r}
+# Make predictions on the data
+predicted <- predict(lm_chose, test_data, type = "response")
+
+# Convert probabilities to binary predictions (0 or 1)
+predicted_class <- ifelse(predicted > 0.5, 1, 0)
+
+# Create the confusion matrix
+conf_matrix <- table(Actual = test_data$any_response, Predicted = predicted_class)
+
+# Print the confusion matrix
+print(conf_matrix)
+
+# Calculate the overall fraction of correct predictions
+overall_accuracy_log <- sum(diag(conf_matrix)) / sum(conf_matrix)
+print(paste("Overall fraction of correct predictions for log model:", overall_accuracy_log*100))
+```
+
+*Doing confusion matrix on a LDA model*
+```{r}
+lda_model <- lda(any_response ~ Teenhome_Scaled + Recency_Scaled + MntWines_Scaled + NumStorePurchases_Scaled + NumWebVisitsMonth_Scaled + Income_log_Scaled + NumCatalogPurchases_Scaled , data=train_data)
+
+# Make predictions on the data
+predicted <- predict(lda_model, test_data)
+
+# Convert predictions to binary classes (0 or 1)
+predicted_class <- as.numeric(predicted$class) - 1
+
+# Create the confusion matrix
+conf_matrix <- table(Actual = test_data$any_response, Predicted = predicted_class)
+
+# Print the confusion matrix
+print(conf_matrix)
+
+# Calculate the overall fraction of correct predictions
+overall_accuracy_lda <- sum(diag(conf_matrix)) / sum(conf_matrix)
+print(paste("Overall fraction of correct predictions for LDA:", overall_accuracy_lda*100))
+```
+
+
+*Doing confusion matrix on QDA*
+```{r}
+qda_model <- qda(any_response ~ Teenhome_Scaled + Recency_Scaled + MntWines_Scaled + NumStorePurchases_Scaled + NumWebVisitsMonth_Scaled + Income_log_Scaled + NumCatalogPurchases_Scaled , data = train_data)
+# Make predictions on the data
+predicted <- predict(qda_model, test_data)
+
+# Convert predictions to binary classes (0 or 1)
+predicted_class <- as.numeric(predicted$class) - 1
+
+# Create the confusion matrix
+conf_matrix <- table(Actual = test_data$any_response, Predicted = predicted_class)
+
+# Print the confusion matrix
+print(conf_matrix)
+
+# Calculate the overall fraction of correct predictions
+overall_accuracy_qda <- sum(diag(conf_matrix)) / sum(conf_matrix)
+print(paste("Overall fraction of correct predictions for QDA:", overall_accuracy_qda*100))
+```
+
+*Doing confusion matrix with KNN*
+```{r}
+selected_predictors<- c("Income_log_Scaled","Teenhome_Scaled","Recency_Scaled","MntWines_Scaled","NumCatalogPurchases_Scaled","NumStorePurchases_Scaled","NumWebVisitsMonth_Scaled")
+
+include <- which(names(train_data) %in% selected_predictors)
+train_data[1:5, include]
+```
+
+
+```{r}
+# Fit the KNN model
+k <- 6  # Specify the number of neighbors
+knn_model <- knn(train = train_data[, include],
+                 test = test_data[, include],
+                 cl = train_data$any_response,
+                 k = k)
+
+# Create the confusion matrix
+conf_matrix <- table(Actual = test_data$any_response, Predicted = knn_model)
+
+# Print the confusion matrix
+print(conf_matrix)
+
+# Calculate the overall fraction of correct predictions
+overall_accuracy_knn <- sum(diag(conf_matrix)) / sum(conf_matrix)
+print(paste("Overall fraction of correct predictions for KNN:", overall_accuracy_knn*100))
+```
+
+*Doing confusion matrix with Naive-Bayes*
+```{r}
+
+# Fit the Naive Bayes model
+nb_model <- naiveBayes(any_response ~ Teenhome_Scaled + Recency_Scaled + MntWines_Scaled + NumStorePurchases_Scaled + NumWebVisitsMonth_Scaled + Income_log_Scaled + NumCatalogPurchases_Scaled, data = train_data)
+
+# Make predictions on the testing set
+predicted <- predict(nb_model, test_data, type = "class")
+
+# Create the confusion matrix
+conf_matrix <- table(Actual = test_data$any_response, Predicted = predicted)
+
+# Print the confusion matrix
+print(conf_matrix)
+
+# Calculate the overall fraction of correct predictions
+overall_accuracy_nb <- sum(diag(conf_matrix)) / sum(conf_matrix)
+print(paste("Overall fraction of correct predictions for Naive-Bayes:", overall_accuracy_nb*100))
+```
+
+```{r}
+# Create a data frame to store the models and their accuracies
+model_accuracies <- data.frame(
+  Model = c("Log Model", "LDA", "QDA", "KNN", "Naive-Bayes"),
+  Accuracy = c(overall_accuracy_log*100, overall_accuracy_lda*100, overall_accuracy_qda*100, overall_accuracy_knn*100, overall_accuracy_nb*100)
+)
+
+# Print the table
+print(model_accuracies)
+```
+
+
+*Insights of the above confusion matrices:*
+
+- All models have a higher accuracy in predicting the class "0" (correctly predicting around 400-450 instances) compared to class "1" (correctly predicting around 70-90 instances). The models are generally better at identifying true negatives (class "0") than true positives (class "1").
+
+- Logistic regression and LDA seem to be the top performers, with a good balance between accuracy and error rates. QDA and KNN have similar performance, but with some differences in their error rates. Naive Bayes has the lowest accuracy, indicating that it may not be the best choice for this dataset.
+
+Therefore we can say that these explanatory variables are able to predict the response variable with an average accuracy of approximately 78%. This suggests that these explanatory variables are good predictors of the response variable.
+
+However, let us review the residuals for the Logistic regression model.
+```{r}
+plot(predict(lm_chose),residuals(lm_chose))
+```
+
+From the above plot, we see that there are patterns along the horizontal axis. This means that the relationship between the predictors and the response may be non-linear, and the logistic regression model is not capturing this complexity.
+
+Let us check for multicollinearity exists in our model.
+```{r}
+vif(lm_chose)
+```
+
+We see that none of the vif values are between 1 and 5 and not above 5. Hence, we can concur that there are no issues with multicollinearity.
+
+Hence, instead of exploring Ridge regression, Lasso, PLS or PCR, we shall explore classification trees, and boosting models that deal with non-linear models like this one.
+
+**Non-Linear Methods**
+
+*Fit a classification tree on our model.*
+```{r}
+# Fit the classification tree model
+tree_model <- rpart(any_response ~ Teenhome_Scaled + Recency_Scaled + MntWines_Scaled + NumStorePurchases_Scaled + NumWebVisitsMonth_Scaled + Income_log_Scaled + NumCatalogPurchases_Scaled, 
+                   data = train_data, 
+                   method = "class")
+
+# Plot the classification tree
+rpart.plot(tree_model, type=5, extra=2)
+
+# Make predictions on the test data
+tree_pred <- predict(tree_model, newdata = test_data, type = "class")
+
+# Create a confusion matrix
+confusion_matrix <- table(Predicted = tree_pred, Actual = test_data$any_response)
+
+# Calculate the accuracy
+accuracy_class <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+
+print(paste("Accuracy of the classification tree model:", accuracy_class*100))
+```
+
+*Use cross-validation in order to determine the optimal level of tree complexity and then prune the tree.*
+```{r}
+# Fit the classification tree model with cross-validation
+tree_model <- rpart(any_response ~ Teenhome_Scaled + Recency_Scaled + MntWines_Scaled + NumStorePurchases_Scaled + NumWebVisitsMonth_Scaled + Income_log_Scaled + NumCatalogPurchases_Scaled, 
+                   data = train_data, 
+                   method = "class",
+                   cp = 0.01,  # complexity parameter
+                   xval = 20)  # number of cross-validations
+
+# Plot the cross-validation results
+plotcp(tree_model)
+
+# Prune the tree to the optimal size
+opt_tree <- prune(tree_model, cp = tree_model$cptable[which.min(tree_model$cptable[,"xerror"]), "CP"])
+
+# Plot the pruned tree
+prp(opt_tree, main = "Pruned Classification Tree", type = 2, extra = 101)
+
+# Make predictions on the test data
+opt_pred <- predict(opt_tree, newdata = test_data, type = "class")
+
+# Create a confusion matrix
+confusion_matrix <- table(Predicted = opt_pred, Actual = test_data$any_response)
+
+# Calculate the accuracy
+accuracy_pruned <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+
+print(paste("Accuracy of the pruned classification tree model:", accuracy_pruned*100))
+```
+
+*Implement gradient boosting model*
+```{r}
+# Fit the gradient boosting model
+gbm_model <- gbm(any_response ~ Teenhome_Scaled + Recency_Scaled + MntWines_Scaled + NumStorePurchases_Scaled + NumWebVisitsMonth_Scaled + Income_log_Scaled + NumCatalogPurchases_Scaled, 
+                 data = train_data, 
+                 distribution = "bernoulli", 
+                 n.trees = 1000, 
+                 interaction.depth = 3, 
+                 shrinkage = 0.1)
+
+# Make predictions on the test data
+predictions <- predict(gbm_model, newdata = test_data, type = "response")
+
+# Convert predictions to binary values (0 or 1)
+predictions_binary <- ifelse(predictions > 0.5, 1, 0)
+
+# Calculate accuracy
+accuracy_boost <- sum(predictions_binary == test_data$any_response) / nrow(test_data)
+
+# Print accuracy
+print(paste("Accuracy of gradient boosting model:", accuracy_boost*100))
+```
+
+```{r}
+# Create a data frame to store the models and their accuracies
+model_accuracies <- data.frame(
+  Model = c("Classification tree", "Pruned Classification tree", "Gradient boosting"),
+  Accuracy = c(accuracy_class*100,accuracy_pruned*100,accuracy_boost*100))
+
+# Print the table
+print(model_accuracies)
+```
+
+Insights of non-linear models:
+
+- The classification tree model is fairly accurate, with an accuracy of around 0.78. While the pruned classification tree has a very similar accuracy.
+
+- The gradient boosting model is slightly more accurate, with an accuracy of around 0.8.
+
+- The feature "MntWines_Scaled" appears to be an important predictor, as the tree splits on it first.
+
+- The feature "Income_log_Scaled" and "Recency_Scaled" also appear to be important predictors, as the tree splits on them further down.
+
+*Implementing ROC graph*
+```{r}
+# Calculate ROC curve
+roc_curve <- roc(test_data$any_response, predictions)
+
+# Plot ROC curve
+plot(roc_curve, main = "ROC Curve", col = "blue")
+# Calculate AUC
+auc <- auc(roc_curve)
+print(paste("AUC:", auc))
+```
+
+The ROC graph sees a moderately steep slope. This indicates better separation between true positives and false positives. An AUC of approximately 0.81 is also a good sign. However, there is still some room for improvement, as an AUC of 0.81 indicates that the model is not perfect and may misclassify some true positives as false positives (or vice versa).
+
+
